@@ -79,7 +79,7 @@ func (p *RetriableTransport) RoundTrip(req *http.Request) (*http.Response, error
 		}
 		// return if resp.StatusCode < 400
 		// must read resp.Body
-		if d := ParseRetryAfter(resp); d > 0 {
+		if d := ParseRetryAfter(resp, time.Now()); d > 0 {
 			w.SetNext(d)
 		}
 		if err := w.Wait(ctx); err != nil {
@@ -97,7 +97,7 @@ func (p *RetriableTransport) Close() error {
 	return nil
 }
 
-func ParseRetryAfter(resp *http.Response) time.Duration {
+func ParseRetryAfter(resp *http.Response, now time.Time) time.Duration {
 	switch resp.StatusCode {
 	default:
 		return 0
@@ -122,5 +122,5 @@ func ParseRetryAfter(resp *http.Response) time.Duration {
 	if err != nil {
 		return 0
 	}
-	return t.Sub(time.Now())
+	return t.Sub(now)
 }
