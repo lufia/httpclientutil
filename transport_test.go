@@ -1,15 +1,13 @@
 package httpclientutil
 
 import (
-	"errors"
+	"context"
 	"io"
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
-
-	"github.com/lufia/backoff"
 )
 
 func TestRetriableTransport(t *testing.T) {
@@ -19,14 +17,7 @@ func TestRetriableTransport(t *testing.T) {
 	defer s.Close()
 
 	client := &http.Client{
-		Transport: &RetriableTransport{
-			NewWaiter: func() Waiter {
-				return &backoff.Backoff{Limit: 1, Initial: 2}
-			},
-			Transport: &http.Transport{
-				MaxIdleConns: 1,
-			},
-		},
+		Transport: &RetriableTransport{},
 	}
 	resp, err := client.Get(s.URL)
 	if err != nil {
@@ -36,26 +27,60 @@ func TestRetriableTransport(t *testing.T) {
 	resp.Body.Close()
 }
 
+type tWaiter struct {
+	N int
+}
+
+func (w *tWaiter) Wait(ctx context.Context) error {
+	w.N++
+	return nil
+}
+
+func (w *tWaiter) SetNext(d time.Duration) {
+}
+
+type tError bool
+
+func (err tError) Error() string {
+	return "error"
+}
+
+func (err tError) Temporary() bool {
+	return bool(err)
+}
+
 func TestRetriableTransportError(t *testing.T) {
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		t.Fatal("should not reach here")
+		w.Write([]byte("hello"))
 	}))
 	defer s.Close()
 
+	const N = 3
+	var trialCount int
 	f := RoundTripperFunc(func(req *http.Request) (*http.Response, error) {
-		return nil, errors.New("error")
+		trialCount++
+		if trialCount <= N {
+			return nil, tError(true)
+		}
+		return http.DefaultTransport.RoundTrip(req)
 	})
+	var w tWaiter
 	client := &http.Client{
 		Transport: &RetriableTransport{
+			NewWaiter: func() Waiter {
+				return &w
+			},
 			Transport: &f,
 		},
 	}
 	resp, err := client.Get(s.URL)
-	if err == nil {
-		t.Errorf("Get(%q) expects an error", s.URL)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if resp != nil {
-		t.Fatal("response must be nil")
+	io.Copy(ioutil.Discard, resp.Body)
+	resp.Body.Close()
+	if w.N != N {
+		t.Errorf("a request waits %d times; want %d", w.N, N)
 	}
 }
 
