@@ -57,7 +57,7 @@ func TestRetriableTransportError(t *testing.T) {
 
 	const N = 3
 	var trialCount int
-	f := RoundTripperFunc(func(req *http.Request, t http.RoundTripper) (*http.Response, error) {
+	f := RoundTripperFunc(func(req *http.Request) (*http.Response, error) {
 		trialCount++
 		if trialCount <= N {
 			return nil, tError(true)

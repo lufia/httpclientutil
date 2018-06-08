@@ -10,21 +10,24 @@ import (
 )
 
 func Example() {
-	f1 := httpclientutil.RoundTripperFunc(func(r *http.Request, t http.RoundTripper) (*http.Response, error) {
-		fmt.Println("A")
+	f1 := httpclientutil.SenderFunc(func(r *http.Request, t http.RoundTripper) (*http.Response, error) {
+		fmt.Println("A1")
+		defer fmt.Println("A2")
 		return t.RoundTrip(r)
 	})
-	f2 := httpclientutil.RoundTripperFunc(func(r *http.Request, t http.RoundTripper) (*http.Response, error) {
-		fmt.Println("B")
+	f2 := httpclientutil.SenderFunc(func(r *http.Request, t http.RoundTripper) (*http.Response, error) {
+		fmt.Println("B1")
+		defer fmt.Println("B2")
 		return t.RoundTrip(r)
 	})
-	f3 := httpclientutil.RoundTripperFunc(func(r *http.Request, t http.RoundTripper) (*http.Response, error) {
-		fmt.Println("C")
+	f3 := httpclientutil.SenderFunc(func(r *http.Request, t http.RoundTripper) (*http.Response, error) {
+		fmt.Println("C1")
+		defer fmt.Println("C2")
 		return t.RoundTrip(r)
 	})
 	var c http.Client
-	httpclientutil.Pipeline(&c, f1, f2)
-	httpclientutil.Pipeline(&c, f3)
+	httpclientutil.ContinueWith(&c, f1, f2)
+	httpclientutil.ContinueWith(&c, f3)
 
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("hello"))
@@ -35,8 +38,11 @@ func Example() {
 	fmt.Println(string(b))
 	resp.Body.Close()
 	// Output:
-	// C
-	// B
-	// A
+	// C1
+	// B1
+	// A1
+	// A2
+	// B2
+	// C2
 	// hello
 }

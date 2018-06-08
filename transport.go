@@ -10,42 +10,45 @@ import (
 	"github.com/lufia/backoff"
 )
 
-type Transporter interface {
-	http.RoundTripper
-	SetParent(t http.RoundTripper)
+type RoundTripperFunc func(req *http.Request) (*http.Response, error)
+
+func (f RoundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
 }
 
-func Pipeline(c *http.Client, v ...Transporter) {
+type Sender interface {
+	Send(req *http.Request, next http.RoundTripper) (*http.Response, error)
+}
+
+type SenderFunc func(req *http.Request, next http.RoundTripper) (*http.Response, error)
+
+func (f SenderFunc) Send(req *http.Request, t http.RoundTripper) (*http.Response, error) {
+	return f(req, t)
+}
+
+func WithTransport(p Sender, t http.RoundTripper) http.RoundTripper {
+	return RoundTripperFunc(func(req *http.Request) (*http.Response, error) {
+		next := t
+		if next == nil {
+			next = http.DefaultTransport
+		}
+		return p.Send(req, next)
+	})
+}
+
+func send(req *http.Request, next http.RoundTripper) (*http.Response, error) {
+	if next == nil {
+		next = http.DefaultTransport
+	}
+	return next.RoundTrip(req)
+}
+
+func ContinueWith(c *http.Client, a ...Sender) {
 	t := c.Transport
-	for _, p := range v {
-		p.SetParent(t)
-		t = p
+	for _, r := range a {
+		t = WithTransport(r, t)
 	}
 	c.Transport = t
-}
-
-// RoundTripperFunc returns
-type roundTripperFunc struct {
-	t http.RoundTripper
-	f func(req *http.Request, t http.RoundTripper) (*http.Response, error)
-}
-
-func RoundTripperFunc(f func(req *http.Request, t http.RoundTripper) (*http.Response, error)) Transporter {
-	return &roundTripperFunc{
-		f: f,
-	}
-}
-
-func (p *roundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) {
-	t := p.t
-	if t == nil {
-		t = http.DefaultTransport
-	}
-	return p.f(req, t)
-}
-
-func (p *roundTripperFunc) SetParent(t http.RoundTripper) {
-	p.t = t
 }
 
 type Waiter interface {
