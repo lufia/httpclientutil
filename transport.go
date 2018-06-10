@@ -115,7 +115,7 @@ func (p *RetriableTransport) RoundTrip(req *http.Request) (*http.Response, error
 	p.wg.Add(1)
 	defer p.wg.Done()
 
-	ctx := context.Background()
+	ctx := req.Context()
 	t := p.transport()
 	w := p.waiter()
 	for {
