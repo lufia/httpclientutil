@@ -2,9 +2,13 @@ package httpclientutil
 
 import (
 	"context"
+	"errors"
+	"io"
+	"io/ioutil"
 	"net/http"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/lufia/backoff"
@@ -104,6 +108,10 @@ type temporaryer interface {
 }
 
 func (p *RetriableTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	// TODO(lufia): divide into other transport
+	if v := atomic.LoadInt32(&p.closed); v != 0 {
+		return nil, errors.New("closed")
+	}
 	p.wg.Add(1)
 	defer p.wg.Done()
 
@@ -122,11 +130,13 @@ func (p *RetriableTransport) RoundTrip(req *http.Request) (*http.Response, error
 		if _, ok := retriableStatuses[resp.StatusCode]; !ok {
 			return resp, nil
 		}
-		// return if resp.StatusCode < 400
-		// must read resp.Body
+
 		if d := ParseRetryAfter(resp, time.Now()); d > 0 {
 			w.SetNext(d)
 		}
+		io.Copy(ioutil.Discard, resp.Body)
+		resp.Body.Close()
+		resp = nil
 		if err := w.Wait(ctx); err != nil {
 			return nil, err
 		}
@@ -139,6 +149,8 @@ func isTemporary(err error) bool {
 }
 
 func (p *RetriableTransport) Close() error {
+	atomic.StoreInt32(&p.closed, 1)
+	p.wg.Wait()
 	return nil
 }
 
