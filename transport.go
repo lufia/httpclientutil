@@ -76,10 +76,6 @@ type Waiter interface {
 type RetriableTransport struct {
 	NewWaiter func() Waiter
 	Transport http.RoundTripper
-
-	// wg counts active requests that is both round-tripping and waiting for retry.
-	wg     sync.WaitGroup
-	closed int32
 }
 
 var retriableStatuses = map[int]struct{}{
@@ -108,13 +104,6 @@ type temporaryer interface {
 }
 
 func (p *RetriableTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	// TODO(lufia): divide into other transport
-	if v := atomic.LoadInt32(&p.closed); v != 0 {
-		return nil, errors.New("closed")
-	}
-	p.wg.Add(1)
-	defer p.wg.Done()
-
 	ctx := req.Context()
 	t := p.transport()
 	w := p.waiter()
@@ -148,7 +137,34 @@ func isTemporary(err error) bool {
 	return ok && e.Temporary()
 }
 
-func (p *RetriableTransport) Close() error {
+type ClosableTransport struct {
+	Transport http.RoundTripper
+
+	// wg counts active requests that is both round tripping and waiting for retry.
+	wg     sync.WaitGroup
+	closed int32
+}
+
+func (p *ClosableTransport) transport() http.RoundTripper {
+	if p.Transport != nil {
+		return p.Transport
+	}
+	return http.DefaultTransport
+}
+
+func (p *ClosableTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	if v := atomic.LoadInt32(&p.closed); v != 0 {
+		return nil, errors.New("round tripper is closed")
+	}
+	p.wg.Add(1)
+	defer p.wg.Done()
+
+	t := p.transport()
+	return t.RoundTrip(req)
+}
+
+// Close closes transport and waits all requests is done.
+func (p *ClosableTransport) Close() error {
 	atomic.StoreInt32(&p.closed, 1)
 	p.wg.Wait()
 	return nil
