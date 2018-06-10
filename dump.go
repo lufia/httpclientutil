@@ -8,8 +8,8 @@ import (
 )
 
 type DumpTransport struct {
-	Output        io.Writer
-	IncludingBody bool
+	Output      io.Writer
+	WithoutBody bool
 }
 
 func (d *DumpTransport) Send(req *http.Request, t http.RoundTripper) (*http.Response, error) {
@@ -18,7 +18,7 @@ func (d *DumpTransport) Send(req *http.Request, t http.RoundTripper) (*http.Resp
 		w = os.Stdout
 	}
 
-	b, err := httputil.DumpRequest(req, d.IncludingBody)
+	b, err := httputil.DumpRequest(req, !d.WithoutBody)
 	if err != nil {
 		return nil, err
 	}
@@ -29,7 +29,7 @@ func (d *DumpTransport) Send(req *http.Request, t http.RoundTripper) (*http.Resp
 	if err != nil {
 		return nil, err
 	}
-	b, err = httputil.DumpResponse(resp, d.IncludingBody)
+	b, err = httputil.DumpResponse(resp, !d.WithoutBody)
 	if err != nil {
 		return nil, err
 	}
