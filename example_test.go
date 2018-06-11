@@ -26,8 +26,8 @@ func ExampleContinueWith() {
 		return t.RoundTrip(r)
 	})
 	var c http.Client
-	httpclientutil.ContinueWith(&c, f1, f2)
-	httpclientutil.ContinueWith(&c, f3)
+	c.Transport = httpclientutil.ContinueWith(c.Transport, f1, f2)
+	c.Transport = httpclientutil.ContinueWith(c.Transport, f3)
 
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("hello"))

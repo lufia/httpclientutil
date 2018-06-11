@@ -48,10 +48,9 @@ func send(req *http.Request, next http.RoundTripper) (*http.Response, error) {
 }
 
 // ContinueWith combines HTTP transaction.
-func ContinueWith(c *http.Client, a ...Sender) {
-	t := c.Transport
+func ContinueWith(t http.RoundTripper, a ...Sender) http.RoundTripper {
 	for _, r := range a {
 		t = WithTransport(r, t)
 	}
-	c.Transport = t
+	return t
 }
