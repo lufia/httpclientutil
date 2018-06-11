@@ -1,11 +1,15 @@
 package httpclientutil
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"reflect"
+	"strings"
 	"testing"
 	"time"
 )
@@ -121,5 +125,50 @@ func TestParseRetryAfter(t *testing.T) {
 		if d := ParseRetryAfter(&resp, now); d != v.Want {
 			t.Errorf("ParseRetryAfter(Status=%v, RetryAfter=%q) = %v; want %v", v.StatusCode, v.RetryAfter, d, v.Want)
 		}
+	}
+}
+
+func TestDumpTransport(t *testing.T) {
+	var d time.Time
+	date := d.UTC().Format(time.RFC1123Z)
+
+	var buf bytes.Buffer
+	var c http.Client
+	c.Transport = &DumpTransport{
+		Output: &buf,
+	}
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Date", date)
+		w.Write([]byte("hello"))
+	}))
+	defer s.Close()
+
+	resp, err := c.Get(s.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	a := strings.Split(buf.String(), "\n")
+	for i := range a {
+		a[i] = strings.TrimSpace(a[i])
+	}
+
+	u, err := url.Parse(s.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		"GET / HTTP/1.1",
+		"Host: " + u.Host,
+		"",
+		"HTTP/1.1 200 OK",
+		"Content-Length: 5",
+		"Content-Type: text/plain; charset=utf-8",
+		"Date: Mon, 01 Jan 0001 00:00:00 +0000",
+		"",
+		"hello",
+	}
+	if !reflect.DeepEqual(a, want) {
+		t.Errorf("DumpTransport: %v; want %v", a, want)
 	}
 }
