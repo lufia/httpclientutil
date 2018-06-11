@@ -88,43 +88,32 @@ func TestRetriableTransportError(t *testing.T) {
 	}
 }
 
-func TestParseRetryAfter(t *testing.T) {
-	tab := []struct {
-		StatusCode int
-		RetryAfter string
-		Now        time.Time
-		Want       time.Duration
-	}{
-		{StatusCode: http.StatusOK, RetryAfter: "", Want: 0},
-		{StatusCode: http.StatusInternalServerError, RetryAfter: "10", Want: 0},
-		{StatusCode: http.StatusMovedPermanently, RetryAfter: "10", Want: 10 * time.Second},
-		{StatusCode: http.StatusTooManyRequests, RetryAfter: "10", Want: 10 * time.Second},
-		{StatusCode: http.StatusServiceUnavailable, RetryAfter: "10", Want: 10 * time.Second},
-		{
-			StatusCode: http.StatusServiceUnavailable,
-			RetryAfter: "Sun, 20 May 2018 07:28:00 GMT",
-			Now:        time.Date(2018, 5, 20, 7, 0, 0, 0, time.UTC),
-			Want:       28 * time.Minute,
-		},
+func TestClosableTransport(t *testing.T) {
+	var p ClosableTransport
+	var c http.Client
+	c.Transport = &p
 
-		{StatusCode: http.StatusServiceUnavailable, RetryAfter: "-10", Want: 0},
-		{StatusCode: http.StatusServiceUnavailable, RetryAfter: "", Want: 0},
-		{StatusCode: http.StatusServiceUnavailable, RetryAfter: "aaa", Want: 0},
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("hello"))
+	}))
+	defer s.Close()
+	resp, err := c.Get(s.URL)
+	if err != nil {
+		t.Fatal(err)
 	}
-	for _, v := range tab {
-		var resp http.Response
-		resp.StatusCode = v.StatusCode
-		resp.Header = make(http.Header)
-		if v.RetryAfter != "" {
-			resp.Header.Add("Retry-After", v.RetryAfter)
-		}
-		now := v.Now
-		if now.IsZero() {
-			now = time.Now()
-		}
-		if d := ParseRetryAfter(&resp, now); d != v.Want {
-			t.Errorf("ParseRetryAfter(Status=%v, RetryAfter=%q) = %v; want %v", v.StatusCode, v.RetryAfter, d, v.Want)
-		}
+	b, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if s := string(b); s != "hello" {
+		t.Errorf("in open: got %v; want %v", s, "hello")
+	}
+
+	p.Close()
+	_, err = c.Get(s.URL)
+	if err == nil {
+		t.Errorf("in closed: expects an error")
 	}
 }
 
