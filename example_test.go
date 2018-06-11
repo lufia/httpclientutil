@@ -9,7 +9,7 @@ import (
 	"github.com/lufia/httpclientutil"
 )
 
-func Example() {
+func ExampleContinueWith() {
 	f1 := httpclientutil.SenderFunc(func(r *http.Request, t http.RoundTripper) (*http.Response, error) {
 		fmt.Println("A1")
 		defer fmt.Println("A2")

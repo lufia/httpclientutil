@@ -6,7 +6,8 @@ import (
 	"io"
 	"io/ioutil"
 	"net/http"
-	"strconv"
+	"net/http/httputil"
+	"os"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -14,56 +15,11 @@ import (
 	"github.com/lufia/backoff"
 )
 
-// RoundTripperFunc type is an adapter to allow the use of ordinary functions as
-// HTTP round trippers. If f is a function with the appropriate signature,
-// RoundTripperFunc(f) is a http.RoundTripper that calls f.
-type RoundTripperFunc func(*http.Request) (*http.Response, error)
-
-func (f RoundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) {
-	return f(req)
-}
-
-// Sender is an interface representing the ability to execute a single
-// HTTP transaction.
-type Sender interface {
-	Send(req *http.Request, next http.RoundTripper) (*http.Response, error)
-}
-
-// SenderFunc type is an adapter to allow the use of ordinary functions as
-// HTTP round trippers.
-type SenderFunc func(req *http.Request, next http.RoundTripper) (*http.Response, error)
-
-// Send executes a single HTTP transaction. t always isn't nil
-func (f SenderFunc) Send(req *http.Request, t http.RoundTripper) (*http.Response, error) {
-	return f(req, t)
-}
-
-// WithTransport returns a new RoundTripper.
-// New RoundTripper is set t onto p as a parent RoundTripper.
-func WithTransport(p Sender, t http.RoundTripper) http.RoundTripper {
-	return RoundTripperFunc(func(req *http.Request) (*http.Response, error) {
-		next := t
-		if next == nil {
-			next = http.DefaultTransport
-		}
-		return p.Send(req, next)
-	})
-}
-
-func send(req *http.Request, next http.RoundTripper) (*http.Response, error) {
-	if next == nil {
-		next = http.DefaultTransport
+func transport(t http.RoundTripper) http.RoundTripper {
+	if t != nil {
+		return t
 	}
-	return next.RoundTrip(req)
-}
-
-// ContinueWith combines HTTP transaction.
-func ContinueWith(c *http.Client, a ...Sender) {
-	t := c.Transport
-	for _, r := range a {
-		t = WithTransport(r, t)
-	}
-	c.Transport = t
+	return http.DefaultTransport
 }
 
 type Waiter interface {
@@ -72,7 +28,7 @@ type Waiter interface {
 }
 
 // RetriableTransport retries a request that is faile such as 429, 500, 503, or 504.
-// And, This retries too when the RoundTripper that is setted to Transport field returns an temporary error.
+// And, This retries too when the RoundTripper that is setted to Transport field returns an temporary error that implement Temporary() bool.
 type RetriableTransport struct {
 	NewWaiter func() Waiter
 	Transport http.RoundTripper
@@ -83,13 +39,6 @@ var retriableStatuses = map[int]struct{}{
 	http.StatusInternalServerError: struct{}{},
 	http.StatusServiceUnavailable:  struct{}{},
 	http.StatusGatewayTimeout:      struct{}{},
-}
-
-func (p *RetriableTransport) transport() http.RoundTripper {
-	if p.Transport != nil {
-		return p.Transport
-	}
-	return http.DefaultTransport
 }
 
 func (p *RetriableTransport) waiter() Waiter {
@@ -105,7 +54,7 @@ type temporaryer interface {
 
 func (p *RetriableTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	ctx := req.Context()
-	t := p.transport()
+	t := transport(p.Transport)
 	w := p.waiter()
 	for {
 		resp, err := t.RoundTrip(req)
@@ -145,13 +94,6 @@ type ClosableTransport struct {
 	closed int32
 }
 
-func (p *ClosableTransport) transport() http.RoundTripper {
-	if p.Transport != nil {
-		return p.Transport
-	}
-	return http.DefaultTransport
-}
-
 func (p *ClosableTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	if v := atomic.LoadInt32(&p.closed); v != 0 {
 		return nil, errors.New("round tripper is closed")
@@ -159,7 +101,7 @@ func (p *ClosableTransport) RoundTrip(req *http.Request) (*http.Response, error)
 	p.wg.Add(1)
 	defer p.wg.Done()
 
-	t := p.transport()
+	t := transport(p.Transport)
 	return t.RoundTrip(req)
 }
 
@@ -170,30 +112,36 @@ func (p *ClosableTransport) Close() error {
 	return nil
 }
 
-func ParseRetryAfter(resp *http.Response, now time.Time) time.Duration {
-	switch resp.StatusCode {
-	default:
-		return 0
-	case http.StatusMovedPermanently:
-		break
-	case http.StatusTooManyRequests:
-		break
-	case http.StatusServiceUnavailable:
-		break
+type DumpTransport struct {
+	Transport   http.RoundTripper
+	Output      io.Writer
+	WithoutBody bool
+}
+
+func (t *DumpTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	w := t.Output
+	if w == nil {
+		w = os.Stdout
 	}
-	s := resp.Header.Get("Retry-After")
-	if s == "" {
-		return 0
-	}
-	if n, err := strconv.Atoi(s); err == nil {
-		if n < 0 {
-			return 0
-		}
-		return time.Duration(n) * time.Second
-	}
-	t, err := http.ParseTime(s)
+
+	b, err := httputil.DumpRequest(req, !t.WithoutBody)
 	if err != nil {
-		return 0
+		return nil, err
 	}
-	return t.Sub(now)
+	if _, err := w.Write(b); err != nil {
+		return nil, err
+	}
+	p := transport(t.Transport)
+	resp, err := p.RoundTrip(req)
+	if err != nil {
+		return nil, err
+	}
+	b, err = httputil.DumpResponse(resp, !t.WithoutBody)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := w.Write(b); err != nil {
+		return nil, err
+	}
+	return resp, nil
 }
