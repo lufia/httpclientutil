@@ -145,3 +145,5 @@ func (t *DumpTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	}
 	return resp, nil
 }
+
+// TODO(lufia): RateLimitTransport
