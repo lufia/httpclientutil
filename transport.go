@@ -12,8 +12,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/lufia/backoff"
+	"golang.org/x/sync/semaphore"
 	"golang.org/x/time/rate"
+
+	"github.com/lufia/backoff"
 )
 
 func transport(t http.RoundTripper) http.RoundTripper {
@@ -155,23 +157,44 @@ type RateLimitTransport struct {
 	Limit     int
 
 	l    *rate.Limiter
-	once *sync.Once
+	once sync.Once
 }
 
-func (t *RateLimitTransport) intervalEveryToken() time.Duration {
+func (t *RateLimitTransport) interval() time.Duration {
 	return t.Interval / time.Duration(t.Limit)
 }
 
 func (t *RateLimitTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	t.once.Do(func() {
-		n := rate.Every(t.intervalEveryToken())
+		n := rate.Every(t.interval())
 		t.l = rate.NewLimiter(n, t.Limit)
 	})
 	ctx := req.Context()
-	err := t.l.Wait(ctx)
-	if err != nil {
+	if err := t.l.Wait(ctx); err != nil {
 		return nil, err
 	}
+	p := transport(t.Transport)
+	return p.RoundTrip(req)
+}
+
+// SemaphoreTransport restricts number of concurrent requests up to Limit.
+type SemaphoreTransport struct {
+	Transport http.RoundTripper
+	Limit     int
+
+	w    *semaphore.Weighted
+	once sync.Once
+}
+
+func (t *SemaphoreTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	t.once.Do(func() {
+		t.w = semaphore.NewWeighted(int64(t.Limit))
+	})
+	ctx := req.Context()
+	if err := t.w.Acquire(ctx, 1); err != nil {
+		return nil, err
+	}
+	defer t.w.Release(1)
 	p := transport(t.Transport)
 	return p.RoundTrip(req)
 }
