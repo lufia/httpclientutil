@@ -155,16 +155,16 @@ type RateLimitTransport struct {
 	Limit     int
 
 	l    *rate.Limiter
-	once *sync.Once
+	once sync.Once
 }
 
-func (t *RateLimitTransport) intervalEveryToken() time.Duration {
+func (t *RateLimitTransport) interval() time.Duration {
 	return t.Interval / time.Duration(t.Limit)
 }
 
 func (t *RateLimitTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	t.once.Do(func() {
-		n := rate.Every(t.intervalEveryToken())
+		n := rate.Every(t.interval())
 		t.l = rate.NewLimiter(n, t.Limit)
 	})
 	ctx := req.Context()
@@ -174,4 +174,14 @@ func (t *RateLimitTransport) RoundTrip(req *http.Request) (*http.Response, error
 	}
 	p := transport(t.Transport)
 	return p.RoundTrip(req)
+}
+
+// SemaphoreTransport restricts number of concurrent requests up to Limit.
+type SemaphoreTransport struct {
+	Transport http.RoundTripper
+	Limit     int
+}
+
+func (t *SemaphoreTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	// TODO(lufia): implement
 }
