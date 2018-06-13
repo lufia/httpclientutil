@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/lufia/backoff"
+	"golang.org/x/time/rate"
 )
 
 func transport(t http.RoundTripper) http.RoundTripper {
@@ -146,4 +147,31 @@ func (t *DumpTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	return resp, nil
 }
 
-// TODO(lufia): RateLimitTransport
+// RateLimitTransport limits requests through transport.
+// This will blocks requests over limit until decrease of rate.
+type RateLimitTransport struct {
+	Transport http.RoundTripper
+	Interval  time.Duration
+	Limit     int
+
+	l    *rate.Limiter
+	once *sync.Once
+}
+
+func (t *RateLimitTransport) intervalEveryToken() time.Duration {
+	return t.Interval / time.Duration(t.Limit)
+}
+
+func (t *RateLimitTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	t.once.Do(func() {
+		n := rate.Every(t.intervalEveryToken())
+		t.l = rate.NewLimiter(n, t.Limit)
+	})
+	ctx := req.Context()
+	err := t.l.Wait(ctx)
+	if err != nil {
+		return nil, err
+	}
+	p := transport(t.Transport)
+	return p.RoundTrip(req)
+}
