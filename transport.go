@@ -198,13 +198,3 @@ func (t *SemaphoreTransport) RoundTrip(req *http.Request) (*http.Response, error
 	p := transport(t.Transport)
 	return p.RoundTrip(req)
 }
-
-// SemaphoreTransport restricts number of concurrent requests up to Limit.
-type SemaphoreTransport struct {
-	Transport http.RoundTripper
-	Limit     int
-}
-
-func (t *SemaphoreTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	// TODO(lufia): implement
-}
