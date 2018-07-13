@@ -33,7 +33,7 @@ type Waiter interface {
 // RetriableTransport retries a request that is faile such as 429, 500, 503, or 504.
 // And, This retries too when the RoundTripper that is setted to Transport field returns an temporary error that implement Temporary() bool.
 type RetriableTransport struct {
-	NewWaiter func() Waiter
+	NewWaiter func(r *http.Request) Waiter
 	Transport http.RoundTripper
 }
 
@@ -44,9 +44,9 @@ var retriableStatuses = map[int]struct{}{
 	http.StatusGatewayTimeout:      struct{}{},
 }
 
-func (p *RetriableTransport) waiter() Waiter {
+func (p *RetriableTransport) waiter(r *http.Request) Waiter {
 	if p.NewWaiter != nil {
-		return p.NewWaiter()
+		return p.NewWaiter(r)
 	}
 	return &backoff.Backoff{}
 }
@@ -58,7 +58,7 @@ type temporaryer interface {
 func (p *RetriableTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	ctx := req.Context()
 	t := transport(p.Transport)
-	w := p.waiter()
+	w := p.waiter(req)
 	for {
 		resp, err := t.RoundTrip(req)
 		if err != nil {

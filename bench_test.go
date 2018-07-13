@@ -66,7 +66,7 @@ func BenchmarkRetriableTransport(b *testing.B) {
 	client := &http.Client{
 		Transport: &tCountTransport{
 			Transport: &RetriableTransport{
-				NewWaiter: func() Waiter {
+				NewWaiter: func(r *http.Request) Waiter {
 					return &backoff.Backoff{Limit: 3, Initial: 2}
 				},
 				Transport: &http.Transport{

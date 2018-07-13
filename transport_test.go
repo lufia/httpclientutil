@@ -71,7 +71,7 @@ func TestRetriableTransportError(t *testing.T) {
 	var w tWaiter
 	client := &http.Client{
 		Transport: &RetriableTransport{
-			NewWaiter: func() Waiter {
+			NewWaiter: func(r *http.Request) Waiter {
 				return &w
 			},
 			Transport: f,
