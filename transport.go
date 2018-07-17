@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"os"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -55,7 +56,11 @@ type temporaryer interface {
 	Temporary() bool
 }
 
+// RoundTrip implements the http.RoundTripper interface.
+// This returns a response with X-Retry-Count header.
 func (p *RetriableTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	var retryCount int
+
 	ctx := req.Context()
 	t := transport(p.Transport)
 	w := p.waiter(req)
@@ -63,11 +68,14 @@ func (p *RetriableTransport) RoundTrip(req *http.Request) (*http.Response, error
 		resp, err := t.RoundTrip(req)
 		if err != nil {
 			if !isTemporary(err) {
+				// TODO(lufia): should set retry-count header
 				return nil, err
 			}
 			w.Wait(ctx)
+			retryCount++
 			continue
 		}
+		resp.Header.Set("X-Retry-Count", strconv.Itoa(retryCount))
 		if _, ok := retriableStatuses[resp.StatusCode]; !ok {
 			return resp, nil
 		}
@@ -81,6 +89,7 @@ func (p *RetriableTransport) RoundTrip(req *http.Request) (*http.Response, error
 		if err := w.Wait(ctx); err != nil {
 			return nil, err
 		}
+		retryCount++
 	}
 }
 

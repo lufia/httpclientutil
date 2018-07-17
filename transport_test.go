@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -29,6 +30,13 @@ func TestRetriableTransport(t *testing.T) {
 	}
 	io.Copy(ioutil.Discard, resp.Body)
 	resp.Body.Close()
+	n, err := strconv.Atoi(resp.Header.Get("X-Retry-Count"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 0 {
+		t.Errorf("Retry-Count = %d; want 0", n)
+	}
 }
 
 type tWaiter struct {
@@ -85,6 +93,13 @@ func TestRetriableTransportError(t *testing.T) {
 	resp.Body.Close()
 	if w.N != N {
 		t.Errorf("a request waits %d times; want %d", w.N, N)
+	}
+	n, err := strconv.Atoi(resp.Header.Get("X-Retry-Count"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != w.N {
+		t.Errorf("Retry-Count = %d; want %d", n, w.N)
 	}
 }
 
