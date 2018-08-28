@@ -187,6 +187,8 @@ func (t *RateLimitTransport) RoundTrip(req *http.Request) (*http.Response, error
 }
 
 // SemaphoreTransport restricts number of concurrent requests up to Limit.
+//
+// Go 1.11 or later, you could use http.Client.MaxConnsPerHost.
 type SemaphoreTransport struct {
 	Transport http.RoundTripper
 	Limit     int
