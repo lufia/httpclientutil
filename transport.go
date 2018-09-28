@@ -34,6 +34,16 @@ type Waiter interface {
 // RetriableTransport retries a request that is faile such as 429, 500, 503, or 504.
 // And, This retries too when the RoundTripper that is setted to Transport field returns an temporary error that implement Temporary() bool.
 type RetriableTransport struct {
+	// Peak is maximum duration. Zero is no limit.
+	Peak time.Duration
+	// Initial is initial duration.
+	Initial time.Duration
+	// Limit is maximum retry count.
+	Limit int
+	// MaxAge is maximum time until transport is force expired.
+	MaxAge time.Duration
+
+	// NewWaiter overrides above parameters.
 	NewWaiter func(r *http.Request) Waiter
 	Transport http.RoundTripper
 }
@@ -49,11 +59,27 @@ func (p *RetriableTransport) waiter(r *http.Request) Waiter {
 	if p.NewWaiter != nil {
 		return p.NewWaiter(r)
 	}
-	return &backoff.Backoff{}
+	return &backoff.Backoff{
+		Peak:    p.Peak,
+		Initial: p.Initial,
+		Limit:   p.Limit,
+		MaxAge:  p.MaxAge,
+	}
 }
 
 type temporaryer interface {
 	Temporary() bool
+}
+
+const countKey = "X-Retry-Count"
+
+func RetryCount(resp *http.Response) int {
+	s := resp.Header.Get(countKey)
+	n, err := strconv.Atoi(s)
+	if err != nil {
+		return 0
+	}
+	return n
 }
 
 // RoundTrip implements the http.RoundTripper interface.
@@ -75,7 +101,7 @@ func (p *RetriableTransport) RoundTrip(req *http.Request) (*http.Response, error
 			retryCount++
 			continue
 		}
-		resp.Header.Set("X-Retry-Count", strconv.Itoa(retryCount))
+		resp.Header.Set(countKey, strconv.Itoa(retryCount))
 		if _, ok := retriableStatuses[resp.StatusCode]; !ok {
 			return resp, nil
 		}

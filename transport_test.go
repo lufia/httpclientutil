@@ -176,3 +176,24 @@ func TestDumpTransport(t *testing.T) {
 		t.Errorf("DumpTransport: %v; want %v", a, want)
 	}
 }
+
+func TestRetryCount(t *testing.T) {
+	tests := []struct {
+		val  string
+		want int
+	}{
+		{val: "", want: 0},
+		{val: "0", want: 0},
+		{val: "1", want: 1},
+		{val: "10", want: 10},
+	}
+	for _, tt := range tests {
+		var r http.Response
+		r.Header = make(http.Header)
+		r.Header.Set(countKey, tt.val)
+		n := RetryCount(&r)
+		if n != tt.want {
+			t.Errorf("RetryCount(%q) = %d; want %d\n", tt.val, n, tt.want)
+		}
+	}
+}
