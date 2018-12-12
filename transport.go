@@ -133,11 +133,11 @@ type ClosableTransport struct {
 }
 
 func (p *ClosableTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	p.wg.Add(1)
+	defer p.wg.Done()
 	if v := atomic.LoadInt32(&p.closed); v != 0 {
 		return nil, errors.New("round tripper is closed")
 	}
-	p.wg.Add(1)
-	defer p.wg.Done()
 
 	t := transport(p.Transport)
 	return t.RoundTrip(req)
