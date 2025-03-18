@@ -9,4 +9,4 @@ on:
   - cron: '0 14 10 * *'
 jobs:
   test:
-    uses: lufia/workflows/.github/workflows/go-test.yml@v0.6.0
+    uses: lufia/workflows/.github/workflows/go-test.yml@v0.7.0
